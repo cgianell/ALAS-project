@@ -13,7 +13,7 @@ Training pair examples
 - [FINAL]       section mini-summaries -> pseudo full lay summary
 
 To create validation and test sets run the code normally with py phase3_training.py
-To train model run the code with py phase3_training.py --train
+to train model run the code with py phase3_training.py --train
 '''
 from __future__ import annotations
 
