@@ -24,6 +24,9 @@ SPECIAL_TOKENS = [
     "[RESULTS_SUMMARY]",
     "[CONCLUSION_SUMMARY]",
 ]
+DEFAULT_EVAL_CSV = "phase3_outputs/silver_test_hybrid.csv"
+DEFAULT_OUTPUT_CSV = "outputs/silver_test_predictions_clean.csv"
+DEFAULT_METRICS_CSV = "outputs/silver_test_metrics_clean.csv"
 
 # -------------------------
 # reuse from phase2
@@ -60,24 +63,32 @@ class ModelSpec:
     path_or_id: str
     base_model: str = "facebook/bart-large-cnn"
 
+MODELS = [
+        # checkpoint4866 below may change name if you had to re-train and check has different name
+        ModelSpec("checkpoint4866", "peft_seq2seq", "phase3_outputs/model_outputs/checkpoint-4866", "facebook/bart-large-cnn"),
+        ModelSpec("bart_large_cnn_base", "seq2seq", "facebook/bart-large-cnn"),
+        ModelSpec("pegasus_arxiv", "seq2seq", "google/pegasus-arxiv"),
+        ModelSpec("led_base_16384", "seq2seq", "allenai/led-base-16384")
+    ]
+
 # -------------------------
 # parsing helpers
 # -------------------------
-def parse_model_spec(raw: str) -> ModelSpec:
-    parts = raw.split("|")
+def parse_model_spec(raw) -> ModelSpec:
+    '''parts = raw.split("|")
     if len(parts) != 4:
         raise ValueError(
             "Each --model_spec must look like: name|kind|path_or_id|base_model"
         )
     name, kind, path_or_id, base_model = [p.strip() for p in parts]
     if base_model == "-":
-        base_model = "facebook/bart-large-cnn"
-
+        base_model = "facebook/bart-large-cnn"'''
+    
     return ModelSpec(
-        name=name,
-        kind=kind,
-        path_or_id=path_or_id,
-        base_model=base_model,
+        name=raw.name,
+        kind=raw.kind,
+        path_or_id=raw.path_or_id,
+        base_model=raw.base_model,
     )
 
 def pick_device(requested: str = "auto") -> torch.device:
@@ -495,9 +506,9 @@ def merge_metric_frames(frames: List[pd.DataFrame]) -> pd.DataFrame:
 # -------------------------
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eval_csv", type=str, required=True)
-    parser.add_argument("--output_csv", type=str, required=True)
-    parser.add_argument("--metrics_csv", type=str, default="")
+    parser.add_argument("--eval_csv", type=str, default=DEFAULT_EVAL_CSV)
+    parser.add_argument("--output_csv", type=str, default=DEFAULT_OUTPUT_CSV)
+    parser.add_argument("--metrics_csv", type=str, default=DEFAULT_METRICS_CSV)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--max_rows", type=int, default=0)
     parser.add_argument("--max_source_length", type=int, default=768)
@@ -505,7 +516,7 @@ def main() -> None:
     parser.add_argument("--num_beams", type=int, default=4)
     parser.add_argument("--compute_bertscore", action="store_true")
     parser.add_argument("--load_in_4bit_causal", action="store_true")
-    parser.add_argument("--model_spec", action="append", required=True)
+    parser.add_argument("--model_spec", action="append", default=MODELS, help="Models should be formatted as: name|kind|path_or_id|base_model")
     args = parser.parse_args()
 
     eval_path = Path(args.eval_csv)
@@ -576,7 +587,7 @@ def main() -> None:
             except Exception:
                 pass
             if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+                torch.cuda.empty_cache() # free memory before the next model loads
 
     out_df = pd.DataFrame(all_rows)
     Path(args.output_csv).parent.mkdir(parents=True, exist_ok=True)
