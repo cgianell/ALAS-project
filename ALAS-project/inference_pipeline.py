@@ -60,7 +60,7 @@ INFERENCE_OPTIONAL_COLUMNS = [
     "digests_count",
     "training_quality_bucket",
 ]
-DEFAULT_MODEL_DIR = "phase3_outputs/model_outputs/checkpoint-4866"
+DEFAULT_MODEL_DIR = Path("phase3_outputs/model_outputs/final_checkpoint") # change this to correct checkpoint
 DEFAULT_PHASE2_CSV = "inference_testset.csv"
 DEFAULT_OUTPUT_CSV = "inference_outputs.csv"
 DEFAULT_DEVICE = "cuda"
@@ -120,6 +120,14 @@ def load_model(model_dir: str, base_model: str = "facebook/bart-large-cnn", devi
         (model_path / "adapter_model.safetensors").exists()
         or (model_path / "adapter_model.bin").exists()
     )
+
+    if not model_path.exists():
+        print(f"[warning] model_dir '{model_dir}' does not exist, falling back to base model: {base_model}")
+    elif model_path.exists() and not (has_adapter_cfg and has_adapter_weights):
+        print(f"[warning] model_dir '{model_dir}' exists but does not look like a LoRA adapter checkpoint")
+        print("[warning] trying to load it as a regular full model folder instead")
+    else:
+        print(f"[info] loading fine-tuned LoRA checkpoint from: {model_dir}")
 
     tokenizer_source = str(model_path) if (model_path / "tokenizer_config.json").exists() else base_model
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
