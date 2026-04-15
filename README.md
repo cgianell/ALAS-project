@@ -1,1 +1,1 @@
-Find project README inside main folder as README.txt
+Find project README inside project folder as README.txt
