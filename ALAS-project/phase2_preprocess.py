@@ -15,14 +15,16 @@ from pypdf import PdfReader
 
 ''' 
 HARD CODED PATHS
-To run this code with no issues file path should be ".\ProjectFolder\"
-and inside this folder there should be 2 files, main.py, and the file in METADATA_CSV
-and 1 folder "arxiv_cs_2026_pdfs"
+To run this code with no issues make sure file path of terminal is inside the project
+so something like "PS C:\\Users\\user\\Downloads\\ALAS-projectmain\\ALAS-project", from here
+you can run py phase2_preprocess.py without issue. Running from 1 file level above will crash
+Also, inside this folder there should be 2 files, phase2_preprocess.py, and the file in METADATA_CSV
+and 1 folder "all_years_pdfs"
 '''
-METADATA_ROOT = "arxiv_database_csvs"
-METADATA_CSV = "arxiv_cs_2022_2026_raw_papers_combined.csv"
+METADATA_ROOT = r"arxiv_database_csvs"
+METADATA_CSV = r"arxiv_cs_2022_2026_raw_papers_combined.csv"
 PDF_ROOT = r"all_years_pdfs"
-OUTPUT_CSV = "phase2_preprocessed.csv"
+OUTPUT_CSV = r"phase2_preprocessed.csv"
 SPACY_MODEL = "en_core_web_sm"
 
 # biased TextRank settings
