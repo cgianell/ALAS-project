@@ -1,3 +1,12 @@
+'''
+This code assumes model: final_checkpoint exists, but this file is too large for upload so
+realistically it must be re-trained which may create a different checkpoint name.
+After re-training and finding best or final checkpoint, please re-name the model on
+line 77 from "final_checkpoint" to whatever the best model checkpoint was during training.
+(Assuming training finished and final_checkpoint was created, you may leave the model name
+as default for getting the code to just run, but this does not guarantee best model results)
+'''
+
 from __future__ import annotations
 
 import argparse
@@ -65,7 +74,7 @@ class ModelSpec:
 
 MODELS = [
         # checkpoint4866 below may change name if you had to re-train and check has different name
-        ModelSpec("checkpoint4866", "peft_seq2seq", "phase3_outputs/model_outputs/checkpoint-4866", "facebook/bart-large-cnn"),
+        ModelSpec("final_checkpoint", "peft_seq2seq", "phase3_outputs/model_outputs/checkpoint-4866", "facebook/bart-large-cnn"),
         ModelSpec("bart_large_cnn_base", "seq2seq", "facebook/bart-large-cnn"),
         ModelSpec("pegasus_arxiv", "seq2seq", "google/pegasus-arxiv"),
         ModelSpec("led_base_16384", "seq2seq", "allenai/led-base-16384")
