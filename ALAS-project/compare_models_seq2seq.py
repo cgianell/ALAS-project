@@ -73,8 +73,8 @@ class ModelSpec:
     base_model: str = "facebook/bart-large-cnn"
 
 MODELS = [
-        # checkpoint4866 below may change name if you had to re-train and check has different name
-        ModelSpec("final_checkpoint", "peft_seq2seq", "phase3_outputs/model_outputs/checkpoint-4866", "facebook/bart-large-cnn"),
+        # checkpoint below may change name if you had to re-train. check both name and 3rd argument (path or id) both have the correct checkpoint name attached
+        ModelSpec("final_checkpoint", "peft_seq2seq", "phase3_outputs/model_outputs/final_checkpoint", "facebook/bart-large-cnn"),
         ModelSpec("bart_large_cnn_base", "seq2seq", "facebook/bart-large-cnn"),
         ModelSpec("pegasus_arxiv", "seq2seq", "google/pegasus-arxiv"),
         ModelSpec("led_base_16384", "seq2seq", "allenai/led-base-16384")
