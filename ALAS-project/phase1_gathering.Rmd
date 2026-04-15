@@ -1,7 +1,7 @@
 ---
 title: "Phase 1, Data Gathering"
 author: "Carlos Gianello"
-date: "4/3/2026"
+date: "4/15/2026"
 output: pdf_document
 ---
 
@@ -39,7 +39,7 @@ NUM_PAPERS <- 1000
 BATCH_SIZE <- 100
 DELAY_SECONDS <- 3
 PDF_SLEEP_SECONDS <- 3 # deprecated
-FOLDER_NAME <- "DS_projectData/arxiv_database_csvs"
+FOLDER_NAME <- "ALAS-project-main/ALAS-project/arxiv_database_csvs"
 OUTPUT_DIR <- file.path(path, FOLDER_NAME)
 
 dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
