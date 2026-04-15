@@ -60,7 +60,7 @@ INFERENCE_OPTIONAL_COLUMNS = [
     "digests_count",
     "training_quality_bucket",
 ]
-DEFAULT_MODEL_DIR = Path("phase3_outputs/model_outputs/final_checkpoint") # change this to correct checkpoint
+DEFAULT_MODEL_DIR = "phase3_outputs/model_outputs/final_checkpoint" # change this to correct checkpoint
 DEFAULT_PHASE2_CSV = "inference_testset.csv"
 DEFAULT_OUTPUT_CSV = "inference_outputs.csv"
 DEFAULT_DEVICE = "cuda"
