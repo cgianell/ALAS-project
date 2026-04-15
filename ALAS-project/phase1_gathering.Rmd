@@ -1,0 +1,425 @@
+---
+title: "Phase 1, Data Gathering"
+author: "Carlos Gianello"
+date: "4/3/2026"
+output: pdf_document
+---
+
+Thank you to arXiv for use of its open access interoperability.
+
+DISCLAIMER: The API fetching is quick ~3 minutes but downloading each separate PDF takes a while.
+You can run the code and stop it anytime you want (pressing the STOP sign button, I have not tested it by closing the program so this might crash it), then re-run it to continue downloading pdfs from where you left off.
+
+Setup: Add the code below to the setup chunk if you do not have every used library installed. Alternatively you can just run the chunk alone and when prompted by R studio, install each library one at a time.
+
+pack <- c("httr2", "xml2", "dplyr", "purrr", "stringr", "tibble", "readr")
+to_install <- pack[!vapply(pack, requireNamespace, logical(1), quietly = TRUE)]
+if (length(to_install) > 0) install.packages(to_install)
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
+library(httr2)
+library(xml2)
+library(purrr)
+
+path <- file.path(Sys.getenv("USERPROFILE"), "Downloads")
+```
+
+This is the settings chunk, you should change the target year here for your assigned year, it also sets the path to work with to the downloads folder in your public user. If you would like a different path to work with you can change the line above "path <- ..." but you should leave folder/file names as they are so we can merge them easily.
+
+```{r settings}
+TARGET_YEARS <- 2022:2026 # To-do: change this to your year
+NUM_PAPERS <- 1000
+BATCH_SIZE <- 100
+DELAY_SECONDS <- 3
+PDF_SLEEP_SECONDS <- 3 # deprecated
+FOLDER_NAME <- "DS_projectData/arxiv_database_csvs"
+OUTPUT_DIR <- file.path(path, FOLDER_NAME)
+
+dir.create(OUTPUT_DIR, showWarnings = FALSE, recursive = TRUE)
+```
+
+The helper functions include:
+- Category structure with every sub-category for CS field
+- %~% function is a fallback for null values
+- Build query for API fetching
+
+```{r helpers}
+cs_categories <- c(
+  "cs.AI","cs.AR","cs.CC","cs.CE","cs.CG","cs.CL","cs.CR","cs.CV","cs.CY",
+  "cs.DB","cs.DC","cs.DL","cs.DM","cs.DS","cs.ET","cs.FL","cs.GL","cs.GR",
+  "cs.GT","cs.HC","cs.IR","cs.IT","cs.LG","cs.LO","cs.MA","cs.MM","cs.MS",
+  "cs.NA","cs.NE","cs.NI","cs.OH","cs.OS","cs.PF","cs.PL","cs.RO","cs.SC",
+  "cs.SD","cs.SE","cs.SI","cs.SY"
+)
+
+`%~%` <- function(x, y) {
+  if (is.null(x) || length(x) == 0 || all(is.na(x)) || all(x == "")) y else x
+}
+
+build_year_query <- function(year, categories = cs_categories) {
+  start_stamp <- sprintf("%d01010000", year) # 01 = january, 01 = first day, 0000 = start of day
+  end_stamp   <- sprintf("%d12312359", year) # 12 = december, 31 = 31st day, 23:59 = 1 minute before midnight
+
+  cs_part <- paste(sprintf("cat:%s", categories), collapse = " OR ")
+
+  paste0(
+    "(",
+    cs_part,
+    ") AND submittedDate:[",
+    start_stamp,
+    " TO ",
+    end_stamp,
+    "]"
+  )
+}
+```
+
+This is how we download each individual paper. 
+
+```{r pdf download}
+download_pdfs <- function(metadata_df, out_dir, sleep_sec = 1) {
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+  pdf_meta <- metadata_df %>%
+    filter(!is.na(pdf_url), pdf_url != "") %>% # only usable rows
+    mutate(
+      arxiv_id_full = sub("^https?://(export\\.)?arxiv\\.org/pdf/", "", pdf_url), # strip beginning
+      arxiv_id_full = sub("\\.pdf$", "", arxiv_id_full),                          # strip ending file name extension
+      base_id = sub("v[0-9]+$", "", arxiv_id_full),                               # strip ending version
+      current_version = ifelse( # check if paper has different versions
+        grepl("v[0-9]+$", arxiv_id_full), 
+        as.integer(sub(".*v([0-9]+)$", "\\1", arxiv_id_full)),
+        NA_integer_
+      ),
+      pdf_path = file.path(out_dir, paste0(gsub("/", "_", base_id), ".pdf")) # if they have / change to _ (windows complains if files have "/")
+    )
+  
+  message("Downloading PDFs...")
+
+  for (i in seq_len(nrow(pdf_meta))) {
+    this_full_id <- pdf_meta$arxiv_id_full[i]
+    this_base_id <- pdf_meta$base_id[i]
+    this_version <- pdf_meta$current_version[i]
+    this_path <- pdf_meta$pdf_path[i]
+
+    if (file.exists(this_path)) { # this allows pause/resume task in pdf download
+      message(sprintf("PDF %d/%d already exists, skipping", i, nrow(pdf_meta)))
+      next
+    }
+
+    candidates <- c( # create list of candidate version for fallback
+      paste0("https://arxiv.org/pdf/", this_full_id)
+    )
+
+    if (!is.na(this_version) && this_version > 1) {
+      earlier_versions <- paste0(
+        "https://arxiv.org/pdf/",
+        this_base_id,
+        "v",
+        seq(this_version - 1, 1, by = -1) # add v1, v2, v3 etc 1 by 1
+      )
+      candidates <- c(candidates, earlier_versions) # add these candidates to the list
+    }
+
+    candidates <- c(candidates, paste0("https://arxiv.org/pdf/", this_base_id)) # add base candidate with no vX = no versions
+    candidates <- unique(candidates) # if original url is same as base pick 1
+
+    success <- FALSE
+    saved_from <- NA_character_
+
+    for (j in seq_along(candidates)) { # try to download each candidate
+      url <- candidates[j]
+
+      tryCatch({
+        request(url) %>%
+          req_user_agent("R arXiv yearly retrieval for group data science project") %>%
+          req_retry(max_tries = 3) %>%
+          req_perform(path = this_path)
+
+        success <- TRUE
+        saved_from <- sub("^https?://(export\\.)?arxiv\\.org/pdf/", "", url)
+        break
+      }, error = function(e) {
+        if (j == 1 && length(candidates) > 1) {
+          message(sprintf(
+            "Failed saving PDF %d/%d version: %s, attempting fallback",
+            i, nrow(pdf_meta), this_full_id
+          ))
+        }
+      })
+      if (success) break
+    }
+    if (success) {
+      if (identical(saved_from, this_full_id)) {
+        message(sprintf("PDF %d/%d successfuly saved", i, nrow(pdf_meta)))
+      } else {
+        message(sprintf(
+          "PDF %d/%d successfuly saved from earlier version: %s",
+          i, nrow(pdf_meta), saved_from
+        ))
+      }
+    } else {
+      message(sprintf(
+        "Failed saving PDF %d/%d after all attempts: %s",
+        i, nrow(pdf_meta), this_full_id
+      ))
+    }
+    
+    # if (i < nrow(pdf_meta)) Sys.sleep(sample(1:3, 3)) # wait between 1 or 3 seconds
+  }
+  invisible(TRUE)
+}
+```
+
+arXiv uses Atom formatted xml responses, here is how we parse it into text
+
+```{r xml}
+parse_feed <- function(xml_doc) {
+  ns <- c( # namespace
+    atom = "http://www.w3.org/2005/Atom",
+    arxiv = "http://arxiv.org/schemas/atom",
+    opensearch = "http://a9.com/-/spec/opensearch/1.1/"
+  )
+
+  results <- xml_find_first(xml_doc, ".//opensearch:totalResults", ns = ns) %>%
+    xml_text() %>%
+    as.integer()
+
+  entries <- xml_find_all(xml_doc, ".//atom:entry", ns = ns)
+
+  if (length(entries) == 0) {
+    return(list(
+      results = results,
+      entries = tibble()
+    ))
+  }
+
+  get_text <- function(node, xpath) {
+    out <- xml_find_first(node, xpath, ns = ns)
+    txt <- xml_text(out)
+    ifelse(length(txt) == 0 || txt == "", NA_character_, txt)
+  }
+
+  get_authors <- function(entry) {
+    authors <- xml_find_all(entry, "./atom:author/atom:name", ns = ns)
+    paste(xml_text(authors), collapse = "; ")
+  }
+  
+  get_main_author <- function(entry) {
+    first_author <- xml_find_first(entry, "./atom:author[1]/atom:name", ns = ns)
+    name <- xml_text(first_author)
+    ifelse(length(name) == 0 || name == "", NA_character_, name)
+  }
+
+  get_categories <- function(entry) {
+    cats <- xml_find_all(
+      entry,
+      "./atom:category[@scheme='http://arxiv.org/schemas/atom']",
+      ns = ns
+    )
+    paste(xml_attr(cats, "term"), collapse = "; ")
+  }
+
+  get_pdf_url <- function(entry) {
+    node <- xml_find_first(entry, "./atom:link[@title='pdf']", ns = ns)
+    href <- xml_attr(node, "href")
+    ifelse(is.na(href) || href == "", NA_character_, href)
+  }
+
+  df <- tibble( # structure with all the useful columns
+    entry_id = map_chr(entries, ~ get_text(.x, "./atom:id")),
+    title = map_chr(entries, ~ get_text(.x, "./atom:title")),
+    abstract = map_chr(entries, ~ get_text(.x, "./atom:summary")),
+    published = map_chr(entries, ~ get_text(.x, "./atom:published")),
+    updated = map_chr(entries, ~ get_text(.x, "./atom:updated")),
+    main_author = map_chr(entries, get_main_author),
+    authors = map_chr(entries, get_authors),
+    all_categories = map_chr(entries, get_categories),
+    main_category = map_chr(
+      entries,
+      ~ xml_attr(
+        xml_find_first(.x, "./arxiv:primary_category", ns = ns),
+        "term"
+      ) %~% NA_character_
+    ),
+    pdf_url = map_chr(entries, get_pdf_url)
+  )
+  list(
+    results = results,
+    entries = df
+  )
+}
+```
+
+This is where we call arXiv API to fetch paper metadata
+
+```{r arxiv}
+# -------------------------
+# Fetch single page helper
+# -------------------------
+fetch_page <- function(
+  search_query,
+  start = 0,
+  max_results = 100,
+  sort_by = "lastUpdatedDate", # we want most recently updated papers (supposedly best version)
+  sort_order = "descending"
+) {
+  resp <- request("https://export.arxiv.org/api/query") %>%
+    req_user_agent("R arXiv yearly retrieval for group data science project") %>%
+    req_url_query(
+      search_query = search_query,
+      start = start,
+      max_results = max_results,
+      sortBy = sort_by,
+      sortOrder = sort_order
+    ) %>%
+    req_retry(
+      max_tries = 5,
+      retry_on_failure = TRUE
+    ) %>%
+    req_perform()
+
+  xml_doc <- read_xml(resp_body_string(resp))
+  parse_feed(xml_doc)
+}
+
+# -------------------------
+# Fetch papers for year
+# -------------------------
+fetch_corpus <- function(
+  year,
+  n = NUM_PAPERS,
+  batch_size = BATCH_SIZE,
+  delay_seconds = DELAY_SECONDS,
+  categories = cs_categories
+) {
+  query <- build_year_query(year, categories)
+
+  out <- list()
+  total_available <- NA_integer_
+
+  i <- 1
+  this_start <- 0
+  kept_so_far <- 0
+
+  repeat {
+    this_n <- batch_size
+
+    message(sprintf("Fetching batch %d", i))
+
+    res <- fetch_page(
+      search_query = query,
+      start = this_start,
+      max_results = this_n,
+      sort_by = "lastUpdatedDate",
+      sort_order = "descending"
+    )
+
+    if (i == 1) total_available <- res$results
+ 
+    # stop if API returned no more entries
+    if (nrow(res$entries) == 0) break
+
+    out[[i]] <- res$entries %>%
+      filter(!is.na(main_category), grepl("^cs\\.", main_category))
+
+    kept_so_far <- bind_rows(out) %>%
+      distinct(entry_id, .keep_all = TRUE) %>%
+      nrow()
+
+    # stop once we have enough valid CS-primary papers
+    if (kept_so_far >= n) break
+
+    # move to next page of raw API results
+    this_start <- this_start + this_n
+    i <- i + 1
+
+    # stop if we've exhausted all available raw matches
+    if (!is.na(total_available) && this_start >= total_available) break
+
+    Sys.sleep(delay_seconds)
+  }
+
+  bind_rows(out) %>%
+    distinct(entry_id, .keep_all = TRUE) %>%
+    slice_head(n = n) %>%
+    mutate(target_year = year)
+}
+```
+
+Main pipeline 
+
+```{r main}
+all_years <- list()
+folder_list <- list()
+
+for (yr in TARGET_YEARS) {
+  message("======================================")
+  message(sprintf("Starting year: %d", yr))
+  message("======================================")
+
+  csv_file <- file.path(OUTPUT_DIR, paste0("arxiv_cs_", yr, "_raw_papers.csv"))
+  rds_file <- file.path(OUTPUT_DIR, paste0("arxiv_cs_", yr, "_raw_papers.rds"))
+  pdf_dir  <- file.path(OUTPUT_DIR, paste0("arxiv_cs_", yr, "_pdfs"))
+
+  if (file.exists(csv_file) && file.exists(rds_file)) {
+    message(sprintf("Metadata files for %d already exist. Skipping metadata fetch.", yr))
+    raw_year <- read_csv(csv_file, show_col_types = FALSE)
+  } else {
+    raw_year <- fetch_corpus(
+      year = yr,
+      n = NUM_PAPERS,
+      batch_size = BATCH_SIZE,
+      delay_seconds = DELAY_SECONDS
+    )
+    write_csv(raw_year, csv_file)
+    saveRDS(raw_year, rds_file)
+  }
+
+  message(sprintf("Done with metadata for %d", yr))
+  message(sprintf("Retrieved papers for %d: %d", yr, nrow(raw_year)))
+
+  metadata_df <- read_csv(csv_file, show_col_types = FALSE)
+  download_pdfs(metadata_df, pdf_dir, sleep_sec = PDF_SLEEP_SECONDS) # dont need pdf_sleep
+
+  all_years[[as.character(yr)]] <- raw_year
+  
+  folder_list <- c(folder_list, pdf_dir)
+  
+  if (yr != max(TARGET_YEARS)) {
+    message("Pausing before next year...")
+    Sys.sleep(10)
+  }
+}
+dest_folder <- file.path("arxiv_database_csvs", "all_years_pdfs")
+
+if (!dir.exists(dest_folder)) dir.create(dest_folder, recursive = TRUE)
+
+folders_to_move <- file.path(folder_list)
+
+total_pdfs <- file.path(dest_folder, basename(folders_to_move))
+
+file.rename(from = folders_to_move, to = total_pdfs)
+
+combined_metadata <- bind_rows(all_years)
+
+combined_csv_file <- file.path(OUTPUT_DIR, "arxiv_cs_2022_2026_raw_papers_combined.csv")
+combined_rds_file <- file.path(OUTPUT_DIR, "arxiv_cs_2022_2026_raw_papers_combined.rds")
+
+write_csv(combined_metadata, combined_csv_file)
+saveRDS(combined_metadata, combined_rds_file)
+
+message("======================================")
+message("All years finished")
+message(sprintf("Years processed: %s", paste(TARGET_YEARS, collapse = ", ")))
+message(sprintf("Total combined papers: %d", nrow(combined_metadata)))
+message("======================================")
+```
+
+To-dos:

@@ -1,0 +1,13 @@
+metric,value
+n_examples,10.0
+avg_input_words,427.6
+avg_target_words,86.5
+global_fraction,1.0
+final_fraction,0.0
+task_count::[GLOBAL],10.0
+quality_count::good,5.0
+quality_count::borderline,3.0
+quality_count::bad,2.0
+route_count::section_plus_global,5.0
+route_count::global_only,5.0
+source_type_count::silver_eval_global,10.0
